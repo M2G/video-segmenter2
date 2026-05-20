@@ -4,7 +4,6 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <errno.h>
 
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -31,7 +30,7 @@ static AVStream *add_output_stream(AVFormatContext *output_format_context, AVStr
         fprintf(stderr, "Erreur: Impossible de copier les paramètres du codec\n");
         return NULL;
     }
-    // Réinitialise le tag codec (requis pour certains conteneurs)
+    // Réinitialise le tag codec (NOTE: requis pour certains conteneurs)
     output_stream->codecpar->codec_tag = 0;
     // Conserve la base temporelle pour les timestamps
     output_stream->time_base = input_stream->time_base;
@@ -40,7 +39,13 @@ static AVStream *add_output_stream(AVFormatContext *output_format_context, AVStr
 
 /**
  * Génère le fichier playlist M3U8 pour le streaming HLS
- * Utilise un fichier temporaire + rename atomique pour éviter lectures incomplètes
+ * Utilise un fichier temporaire + rename pour éviter lectures incomplètes
+ *
+ * Accède directement au ring buffer : supprime la copie intermédiaire O(L)
+ * maxDuration est maintenu de façon incrémentale par l'appelant (O(1)/segment)
+ *
+ * NOTE : O(L) : temps linéaire (proportionnel à L)
+ * Le temps grandit proportionnellement à L (ici max_list_length, le nombre de segments actifs dans la playlist).
  */
 static int write_index_file(
     const char *index,
@@ -50,9 +55,9 @@ static int write_index_file(
     unsigned int segment_number_offset,
     const char *output_prefix,
     const char *output_file_extension,
+    unsigned int maxDuration,
     int islast
 ) {
-    // Validation : au moins un segment requis
     if (numsegments < 1) return 0;
     // Ouvre le fichier temporaire pour écriture
     FILE *tmp_index_fp = fopen(tmp_index, "w");
@@ -61,14 +66,7 @@ static int write_index_file(
         return -1;
     }
 
-    // Calcule la durée maximale des segments (requis par spec HLS)
-    unsigned int maxDuration = actual_segment_duration[0];
-    for (unsigned int i = 1; i < numsegments; i++) {
-        if (actual_segment_duration[i] > maxDuration) {
-            maxDuration = actual_segment_duration[i];
-        }
-    }
-
+    // maxDuration fourni par l'appelant : plus de scan O(L) ici
     // Écrit l'en-tête M3U8
     fprintf(tmp_index_fp, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:%u\n#EXT-X-TARGETDURATION:%u\n",
             segment_number_offset, maxDuration);
@@ -93,7 +91,7 @@ static int write_index_file(
     }
 
     fclose(tmp_index_fp);
-     // Renommage atomique : garantit que lecteurs voient fichier complet ou ancien
+    // Renommage : pour garantir que lecteurs voient fichier complet ou ancien
     if (rename(tmp_index, index) != 0) {
         fprintf(stderr, "Erreur: Impossible de renommer '%s' en '%s': %s\n",
                 tmp_index, index, strerror(errno));
@@ -103,9 +101,6 @@ static int write_index_file(
     return 0;
 }
 
-/**
- * Fonction principale de segmentation vidéo en chunks HLS
- */
 static int segment_video(
     const char *input_file,
     const char *base_dirpath,
@@ -123,6 +118,9 @@ static int segment_video(
     char tmp_output_index_file[MAX_FILENAME_LENGTH];
     // Tableau des durées réelles de chaque segment
     unsigned int actual_segment_durations[MAX_SEGMENTS + 1];
+    // maxDuration maintenu de façon incrémentale : O(1) par segment
+    // au lieu d'un scan O(L) dans write_index_file à chaque découpe
+    unsigned int max_duration = 0;
     // Compteurs et indices
     unsigned int num_segments = 0;
     unsigned int output_index = 1;
@@ -268,46 +266,77 @@ static int segment_video(
             // Ferme le fichier segment actuel
             avio_closep(&output_ctx->pb);
             // Enregistre la durée réelle du segment (arrondie)
-            actual_segment_durations[num_segments] = (unsigned int)rint(prev_packet_time - segment_start_time);
+            unsigned int seg_duration = (unsigned int)rint(prev_packet_time - segment_start_time);
+            actual_segment_durations[num_segments] = seg_duration;
+            // Update : incrémentale O(1) : plus de scan dans write_index_file
+            if (seg_duration > max_duration) max_duration = seg_duration;
             num_segments++;
 
             // Gestion fenêtre glissante : supprime vieux segments si limite atteinte
             if (max_list_length > 0 && num_segments > (unsigned int)max_list_length) {
-                // Construit le nom du vieux segment à supprimer
-                snprintf(current_output_filename, MAX_FILENAME_LENGTH,
+                // Nom du vieux segment : construit avant avio_open du suivant
+                // unlink différé : exécuté après avio_open pour masquer la latence I/O
+                char old_segment_filename[MAX_FILENAME_LENGTH];
+                snprintf(old_segment_filename, MAX_FILENAME_LENGTH,
                         "%s/%s-%u%s", base_dirpath, base_file_name, list_offset, base_file_extension);
-                // Supprime le fichier
-                unlink(current_output_filename);
-                // Avance l'offset de la liste
                 list_offset++;
                 num_segments--;
                 // Décale le tableau des durées
                 memmove(actual_segment_durations, actual_segment_durations + 1,
                        num_segments * sizeof(actual_segment_durations[0]));
+                // Recalcule max_duration seulement si le segment supprimé était le max
+                if (actual_segment_durations[0] == max_duration) {
+                    max_duration = 0;
+                    for (unsigned int i = 0; i < num_segments; i++)
+                        if (actual_segment_durations[i] > max_duration)
+                            max_duration = actual_segment_durations[i];
+                }
+                // Update : le fichier playlist M3U8
+                write_index_file(output_index_file, tmp_output_index_file,
+                               num_segments, actual_segment_durations, list_offset,
+                               base_file_name, base_file_extension, max_duration, 0);
+                // Sécurité : stop si trop de segments
+                if (num_segments >= MAX_SEGMENTS) {
+                    fprintf(stderr, "Limite de segments atteinte (%u)\n", MAX_SEGMENTS);
+                    av_packet_unref(&pkt);
+                    break;
+                }
+                // Incrémente le numéro de segment
+                output_index++;
+                // Crée le nouveau nom de fichier
+                snprintf(current_output_filename, MAX_FILENAME_LENGTH,
+                        "%s/%s-%u%s", base_dirpath, base_file_name, output_index, base_file_extension);
+                // Ouvre le nouveau fichier segment
+                if (avio_open(&output_ctx->pb, current_output_filename, AVIO_FLAG_WRITE) < 0) {
+                    fprintf(stderr, "Erreur: Impossible d'ouvrir '%s'\n", current_output_filename);
+                    av_packet_unref(&pkt);
+                    break;
+                }
+                // unlink différé : après avio_open pour masquer latence derrière ouverture fichier
+                unlink(old_segment_filename);
+            } else {
+                // Update : le fichier playlist M3U8
+                write_index_file(output_index_file, tmp_output_index_file,
+                               num_segments, actual_segment_durations, list_offset,
+                               base_file_name, base_file_extension, max_duration, 0);
+                // Sécurité : arrête si trop de segments
+                if (num_segments >= MAX_SEGMENTS) {
+                    fprintf(stderr, "Limite de segments atteinte (%u)\n", MAX_SEGMENTS);
+                    av_packet_unref(&pkt);
+                    break;
+                }
+                // Incrémente le numéro de segment
+                output_index++;
+                // Crée le nouveau nom de fichier
+                snprintf(current_output_filename, MAX_FILENAME_LENGTH,
+                        "%s/%s-%u%s", base_dirpath, base_file_name, output_index, base_file_extension);
+                // Ouvre le nouveau fichier segment
+                if (avio_open(&output_ctx->pb, current_output_filename, AVIO_FLAG_WRITE) < 0) {
+                    fprintf(stderr, "Erreur: Impossible d'ouvrir '%s'\n", current_output_filename);
+                    av_packet_unref(&pkt);
+                    break;
+                }
             }
-            // Met à jour le fichier playlist M3U8
-            write_index_file(output_index_file, tmp_output_index_file,
-                           num_segments, actual_segment_durations, list_offset,
-                           base_file_name, base_file_extension, 0);
-            // Sécurité : arrête si trop de segments
-            if (num_segments >= MAX_SEGMENTS) {
-                fprintf(stderr, "Limite de segments atteinte (%u)\n", MAX_SEGMENTS);
-                av_packet_unref(&pkt);
-                break;
-            }
-            // Incrémente le numéro de segment
-            output_index++;
-            // Crée le nouveau nom de fichier
-            snprintf(current_output_filename, MAX_FILENAME_LENGTH,
-                    "%s/%s-%u%s", base_dirpath, base_file_name, output_index, base_file_extension);
-            // Ouvre le nouveau fichier segment
-            if (avio_open(&output_ctx->pb, current_output_filename, AVIO_FLAG_WRITE) < 0) {
-                fprintf(stderr, "Erreur: Impossible d'ouvrir '%s'\n", current_output_filename);
-                av_packet_unref(&pkt);
-                break;
-            }
-
-            printf("Segment: '%s'\n", current_output_filename);
             // Réinitialise le timer du segment
             segment_start_time = packet_time;
         }
@@ -349,14 +378,17 @@ static int segment_video(
             if (actual_segment_durations[num_segments] == 0) {
                 actual_segment_durations[num_segments] = 1;
             }
+            // Mise à jour incrémentale du max
+            if (actual_segment_durations[num_segments] > max_duration)
+                max_duration = actual_segment_durations[num_segments];
             num_segments++;
             // Écrit le fichier M3U8 final avec flag END
             write_index_file(output_index_file, tmp_output_index_file,
                            num_segments, actual_segment_durations, list_offset,
-                           base_file_name, base_file_extension, 1);
+                           base_file_name, base_file_extension, max_duration, 1);
         }
     }
-    // Libère toutes les ressources allouées
+    // IMPORTANT : Libère ressources allouées
     avformat_free_context(output_ctx);
     avformat_close_input(&input_ctx);
 
