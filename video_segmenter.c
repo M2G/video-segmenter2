@@ -27,4 +27,46 @@ do {                                                          \
         ret = SEG_ERR;                                        \
         goto cleanup;                                         \
     }                                                         \
-} while (0)
+} while((void)0, 0)
+
+static AVStream *add_out_stream(AVFormatContext *out_ctx, AVStream *in_stream) {
+     AVStream *out_stream = avformat_new_stream(out_ctx, NULL);
+
+    if (!outout_stream) {
+        fprintf(stderr, "Erreur: Impossible d'allouer le flux de sortie\n");
+        return NULL;
+    }
+
+    // copy param codec
+    if (avcodec_parameters_copy(out->codecpar, in_stream->codecpar) < 0) {
+        fprintf(stderr, "Erreur avcodec_parameters_copy\n");
+        return NULL;
+    }
+
+    out_stream->codecpar->codec_tag = 0;
+    out_stream->time_base = in_stream->time_base;
+    return out_stream;
+}
+
+static SegResult *write_idx_file(
+    const char        *index,
+    const char        *tmp_index,
+    unsigned int       num_segments,
+    const unsigned int *durations,
+    unsigned int       offset,
+    const char        *prefix,
+    const char        *ext,
+    unsigned int       max_duration,
+    int                islast
+) {
+
+    if (num_segments < 1) return SEG_OK;
+
+    FILE *fp = fopen(tmp_index, "w");
+    if (!fp) {
+        fprintf(stderr, "Erreur: Impossible d'ouvrir '%s' pour écriture: %s\n", tmp_index, strerror(errno));
+        return SEG_ERR;
+    }
+
+    return SEG_OK;
+}
