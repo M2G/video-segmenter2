@@ -18,6 +18,8 @@ typedef enum {
     SEG_ERR = -1
 } SegResult;
 
+// @see https://github.com/catchorg/Catch2/issues/929#issuecomment-308663820
+// @see https://github.com/catchorg/Catch2/issues/929#issuecomment-308663820
 #define CHECK(cond, msg, ...)                                     \
 do {                                                          \
     if (cond) {                                               \
