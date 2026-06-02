@@ -94,3 +94,22 @@ static SegResult *write_idx_file(
 
     return SEG_OK;
 }
+
+static SegResult open_next_segment(
+    AVFormatContext *out_ctx,
+    char *filename_out,
+    size_t filename_size,
+    const char *dir,
+    const char *name,
+    unsigned int idx,
+    const char *ext
+) {
+    snprintf(filename_out, filename_size, "%s/%s-%u%s", dir, name, idx, ext);
+
+    if (avio_open(&out_ctx->pb, filename_out, AVIO_FLAG_WRITE) < 0)
+        fprintf(stderr, "Erreur : Impossible d'ouvrir '%s'\n", filename_out);
+        return SEG_ERR;
+
+    printf("Segment : '%s'\n", filename_out);
+    return SEG_OK;
+}
