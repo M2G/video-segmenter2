@@ -12,6 +12,7 @@
 
 #define MAX_FILENAME_LENGTH 512
 #define MAX_SEGMENTS        4096
+#define FF_INPUT_BUF_SIZE   128
 
 typedef enum {
     SEG_OK  =  0,
@@ -142,4 +143,21 @@ int max_list_length) {
     int in_audio_idx = -1;
     int out_video_idx = -1;
     int out_audio_idx = -1;
+    int wait_first_keyframe = 1;
+
+    snprintf(tmp_idx_file, MAX_FILENAME_LENGTH, "%s.tmp", output_idx_file);
+
+    int ff_ret = avformat_open_input(&input_ctx, input_file, NULL, NULL);
+    if (ff_ret < 0) {
+        char errbuf[FF_INPUT_BUF_SIZE];
+        av_strerror(ff_ret, errbuf, sizeof(errbuf));
+        fprintf(stderr, "Erreur : Impossible d'ouvrir '%s' : %s\n", input_file, errbuf);
+        return SEG_ERR;
+    }
+    CHECK(avformat_find_stream_info(input_ctx, NULL) < 0, "Impossible de lire les infos. des flux");
+
+    // détecte des flux vidéo/audio
+    for (unsigned int i = 0; i < input_ctx->nb_streams; i++) {}
+    CHECK(in_video_idx < 0, "Aucun flux vidéo trouvé");
+    printf("Flux vidéo : idx %d\n", in_video_idx);
 }
