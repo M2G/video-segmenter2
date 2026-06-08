@@ -30,8 +30,8 @@ do {                                                          \
     }                                                         \
 } while((void)0, 0)
 
-static AVStream *add_out_stream(AVFormatContext *out_ctx, AVStream *in_stream) {
-     AVStream *out_stream = avformat_new_stream(out_ctx, NULL);
+static AVStream *add_out_stream(AVFormatContext *output_ctx, AVStream *in_stream) {
+     AVStream *out_stream = avformat_new_stream(output_ctx, NULL);
 
     if (!outout_stream) {
         fprintf(stderr, "Erreur: Impossible d'allouer le flux de sortie\n");
@@ -96,7 +96,7 @@ static SegResult *write_idx_file(
 }
 
 static SegResult open_next_segment(
-    AVFormatContext *out_ctx,
+    AVFormatContext *output_ctx,
     char *filename_out,
     size_t filename_size,
     const char *dir,
@@ -106,7 +106,7 @@ static SegResult open_next_segment(
 ) {
     snprintf(filename_out, filename_size, "%s/%s-%u%s", dir, name, idx, ext);
 
-    if (avio_open(&out_ctx->pb, filename_out, AVIO_FLAG_WRITE) < 0)
+    if (avio_open(&output_ctx->pb, filename_out, AVIO_FLAG_WRITE) < 0)
         fprintf(stderr, "Erreur : Impossible d'ouvrir '%s'\n", filename_out);
         return SEG_ERR;
 
@@ -123,7 +123,7 @@ const char *base_file_ext,
 int segment_length,
 int max_list_length) {
     AVFormatContext *input_ctx = NULL;
-    AVFormatContext *out_ctx = NULL;
+    AVFormatContext *output_ctx = NULL;
     AVPacket *pkt = NULL;
     SegResult ret = SEG_OK;
 
@@ -165,4 +165,6 @@ int max_list_length) {
     CHECK(in_video_idx < 0, "Aucun flux vidéo trouvé");
     printf("Flux vidéo : idx %d\n", in_video_idx);
     if (in_audio_idx >= 0) printf("Flux audio : idx %d\n", in_audio_idx);
+
+    CHECK(avformat_alloc_output_context2(&output_ctx, NULL, "mpegts", NULL) < 0, "Impossible d'allouer le ctx de sortie");
 }
