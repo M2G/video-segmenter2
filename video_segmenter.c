@@ -132,17 +132,17 @@ int max_list_length) {
     unsigned int durations[MAX_SEGMENTS + 1];
     unsigned int max_duration = 0;
     unsigned int num_segments = 0;
-    unsigned int out_idx = 1;
+    unsigned int output_idx = 1;
     unsigned int list_offset = 1;
 
     double segment_start = 0.0;
     double pkt_time = 0.0;
     double prev_pkt_time = 0.0;
 
-    int in_video_idx = -1;
-    int in_audio_idx = -1;
-    int out_video_idx = -1;
-    int out_audio_idx = -1;
+    int input_video_idx = -1;
+    int input_audio_idx = -1;
+    int output_video_idx = -1;
+    int output_audio_idx = -1;
     int wait_first_keyframe = 1;
 
     snprintf(tmp_idx_file, MAX_FILENAME_LENGTH, "%s.tmp", output_idx_file);
@@ -159,23 +159,29 @@ int max_list_length) {
     // détecte des flux vidéo/audio
     for (unsigned int i = 0; i < input_ctx->nb_streams; i++) {
         enum AVMediaType type = input_ctx->streams[i]->codec->codec_type;
-        if (type == AVMEDIA_TYPE_VIDEO && in_video_idx < 0) in_video_idx = i;
-        if (type == AVMEDIA_TYPE_AUDIO && in_audio_idx < 0) in_audio_idx = i;
+        if (type == AVMEDIA_TYPE_VIDEO && input_video_idx < 0) input_video_idx = i;
+        if (type == AVMEDIA_TYPE_AUDIO && input_audio_idx < 0) input_audio_idx = i;
     }
-    CHECK(in_video_idx < 0, "Aucun flux vidéo trouvé");
-    printf("Flux vidéo : idx %d\n", in_video_idx);
-    if (in_audio_idx >= 0) printf("Flux audio : idx %d\n", in_audio_idx);
+    CHECK(input_video_idx < 0, "Aucun flux vidéo trouvé");
+    printf("Flux vidéo : idx %d\n", input_video_idx);
+    if (input_audio_idx >= 0) printf("Flux audio : idx %d\n", input_audio_idx);
 
     CHECK(avformat_alloc_output_context2(&output_ctx, NULL, "mpegts", NULL) < 0, "Impossible d'allouer le ctx de sortie");
 
-    AVStream *out_video_stream = add_out_stream(output_ctx, input_ctx->streams[in_video_idx]);
+    AVStream *out_video_stream = add_out_stream(output_ctx, input_ctx->streams[input_video_idx]);
     CHECK(!out_video_stream, "Impossible d'allouer le stream");
     out_video_idx = out_video_stream->index;
 
     AVStream *out_audio_stream = NULL;
-    if (in_audio_index >= 0) {
-        AVStream *out_audio_stream = add_out_stream(output_ctx, input_ctx->streams[in_audio_idx]);
+    if (input_audio_index >= 0) {
+        AVStream *out_audio_stream = add_out_stream(output_ctx, input_ctx->streams[input_audio_idx]);
         CHECK(!out_video_stream, "Impossible d'allouer le stream");
         out_audio_idx = out_audio_stream->index;
     }
+
+    CHECK(open_next_segment(
+        output_ctx, current_file_name, MAX_FILENAME_LENGTH, base_dirpath, base_file_name, output_idx, base_file_ext)
+        != SEG_OK, "Impossible d'ouvrir le premier segment");
+
+    if (avformat_write_header(output_ctx, NULL) < 0) {};
 }
