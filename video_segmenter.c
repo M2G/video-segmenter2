@@ -183,5 +183,8 @@ int max_list_length) {
         output_ctx, current_file_name, MAX_FILENAME_LENGTH, base_dirpath, base_file_name, output_idx, base_file_ext)
         != SEG_OK, "Impossible d'ouvrir le premier segment");
 
-    if (avformat_write_header(output_ctx, NULL) < 0) {};
+    if (avformat_write_header(output_ctx, NULL) < 0) {
+        avio_close(&output_ctx->pb);
+        CHECK("Impossible d'écrire l'en-tête MPEG-TS");
+    };
 }
