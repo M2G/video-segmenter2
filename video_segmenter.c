@@ -188,5 +188,10 @@ int max_list_length) {
         CHECK("Impossible d'écrire l'en-tête MPEG-TS");
     }
     const double video_pts2time = av_q2d(input_ctx->streams[input_video_idx]->time_base);
+    // alloc packet
+    pkt = av_packet_alloc();
+    CHECK(!pkt, "Impossible d'allouer AVPacket");
+
+    while (av_read_frame(input_ctx, pkt, 0) >= 0) {}
 
 }
