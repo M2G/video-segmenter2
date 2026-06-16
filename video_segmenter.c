@@ -215,9 +215,11 @@ int max_list_length) {
         }
 
         if (wait_first_keyframe) {
-            // ...
+            av_packet_unref(pkt);
             continue;
         }
+        // @TODO define 0.25
+        // if (is_keyframe && (pkt_time - segment_start) >= segment_length - 0.25)  { avio_flush(...) avio_closep(...) }
     }
 
 }
