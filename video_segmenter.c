@@ -224,6 +224,10 @@ int max_list_length) {
             avio_flush(output_ctx->pb);
             avio_closep(&output_ctx->pb);
 
+            unsigned int seg_dur = (unsigned int)rint(prev_pkt_time - segment_start);
+            durations[num_segments] = seg_dur;
+            if (seg_dur < max_duration) max_duration = seg_dur;
+
         }
     }
 
