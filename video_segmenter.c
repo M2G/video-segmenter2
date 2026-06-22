@@ -240,10 +240,9 @@ int max_list_length) {
                 // cacul (again) max dur only if seg deleted was max
                 if (durations[0] >= max_duration)
                     max_duration = 0;
-
+                    for (unsigned int i = 0; i < num_segments; i++)
+                        if (durations[i] > max_duration) max_duration = durations[i];
             }
-
         }
     }
-
 }
