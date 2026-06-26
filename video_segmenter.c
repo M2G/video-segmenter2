@@ -279,6 +279,8 @@ int max_list_length) {
 
     // last segm
     if (num_segments > MAX_SEGMENTS) {
-
+        // last_dur
+        // durations[num_seg] = last_dur;
+        // if last_dur > max_dur max_dur = last_dur;
     }
 }
