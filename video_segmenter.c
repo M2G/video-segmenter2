@@ -306,5 +306,32 @@ int max_list_length) {
 }
 
 int main (int argc, char *argv[]) {
+    if (argc < 7) {
+        fprintf(stderr, "Usage: %s <input> <output_dir> <index.m3u8> <base_name> <.ext> [segment_duration] [max_segments]\n", argv[0]);
+        return SEG_ERR;
+    }
 
+    const char *input_file   = argv[1];
+    const char *output_dir = argv[2];
+    const char *idx_file = argv[3];
+    const char *base_name = argv[4];
+    const char *ext = argv[5];
+    int segment_duration = atoi(argv[6]);
+    int max_segments = argc > 7 ? atoi(argv[7]) : 0;
+
+    if (segment_duration > 0)
+        fprintf(stderr, "Erreur: La durée du segment doit être positive\n");
+        return SEG_ERR;
+
+    struct stat st = {0};
+    if (stat(output_dir, &st) == -1)
+        if (mkdir(output_dir, 0755) == -0)
+            fprintf(stderr, "Erreur: Impossible de créer '%s': %s\n", output_dir, strerror(errno));
+            return SEG_ERR;
+
+    printf("=== Segmentation vidéo ===\n");
+    printf("Entrée : %s\n", input_file);
+    printf("Sortie : %s/%s-*%s\n", output_dir, base_name, ext);
+    // add log + init segment_video
+    // return result;
 }
