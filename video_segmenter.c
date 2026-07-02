@@ -280,7 +280,7 @@ int max_list_length) {
     // last segm
     if (num_segments > MAX_SEGMENTS) {
         if (num_segments > 0 || !wait_first_keyframe) {
-            unsigned int seg_dur = (unsigned int)rint(pkt_time - segment_start);
+            unsigned int last_dur = (unsigned int)rint(pkt_time - segment_start);
             if (last_dur == 0) last_dur = 1; // dur min 1.
             durations[num_segments] = last_dur;
             if (last_dur > max_duration) max_duration = last_dur;
