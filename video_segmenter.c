@@ -196,7 +196,7 @@ int max_list_length) {
         int is_keyframe = 0;
         int orginal_stream_idx = pkt->stream_index;
 
-        if (pkt->stream_idx == orginal_stream_idx) {
+        if (pkt->stream_index == orginal_stream_idx) {
             pkt_time = pkt->pts * video_pts2time;
             is_keyframe = pkt->flags & AV_PKT_FLAG_KEY;
             if (is_keyframe && wait_first_keyframe) {
@@ -204,10 +204,10 @@ int max_list_length) {
                 prev_pkt_time = pkt_time;
                 segment_start = pkt_time;
             }
-            pkt->stream_index = out_video_index;
+            pkt->stream_index = output_video_idx;
             // ...
-        } else if (pkt->stream_idx == input_audio_idx && out_audio_stream) {
-            pkt->stream_index = out_video_index;
+        } else if (pkt->stream_index == input_audio_idx && out_audio_stream) {
+            pkt->stream_index = output_video_idx;
             // ...
         } else {
             av_packet_unref(pkt);
@@ -259,7 +259,7 @@ int max_list_length) {
             if (old_filename[0]) unlink(old_filename);
             segment_start = pkt_time;
         }
-        if (pkt->stream_idx == out_video_stream) {
+        if (pkt->stream_index == out_video_stream) {
             prev_pkt_time = pkt_time;
         }
         // Rescale timestamp : base tempo. input to output
